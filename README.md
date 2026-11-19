@@ -13,6 +13,8 @@ caltrain.com still opens on a wide timetable and a pile of notices. The journey 
 - Marks the fastest arrival and counts down to each departure in Pacific Time.
 - Draws the trip on the corridor. Express trains leave a hollow stop where they do not call.
 - Saves nothing and asks for no account. A link such as `/?from=palo_alto&to=san_francisco` is the whole query.
+- Schedules restyles the caltrain.com board: weekday or weekend, northbound or southbound, stations down the side, trains across. Built from the bundled GTFS.
+- Fares restyles caltrain.com/fares: Clipper, contactless tap on and tap off, station ticket machines, zones, and the published prices.
 - Leaves hooks on each train for ONE Agent: Protect this journey, Explain my transfer, and Check accessibility. They open a short panel on the row. Live alerts are not connected in this pass, and the panels say so instead of inventing a delay.
 
 ## How we built it

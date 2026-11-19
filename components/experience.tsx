@@ -103,9 +103,8 @@ export function Experience({
           </span>
         </a>
         <div className="nav-side">
-          <a href="#line">Line</a>
-          <a href="#status">Status</a>
-          <span className="unofficial">Unofficial concept</span>
+          <a href="/schedules">Schedules</a>
+          <a href="/fares">Fares</a>
           <span className="clock" suppressHydrationWarning>
             {now ? `${formatClock(now)} PT` : ""}
           </span>
@@ -313,7 +312,7 @@ export function Experience({
       )}
 
       <footer className="foot">
-        <span>Unofficial redesign. Not affiliated with Caltrain.</span>
+        <span>Unofficial redesign concept. Not affiliated with Caltrain.</span>
         <span>
           Schedule from the{" "}
           <a href="https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip">Caltrain GTFS feed</a>.
