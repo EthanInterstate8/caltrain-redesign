@@ -57,6 +57,8 @@ npm run build
 npm start
 ```
 
-No API keys are required for this slice. Later passes will use `API_511_KEY` for 511 GTFS-Realtime and traffic, and `XAI_API_KEY` for ONE Agent. Do not commit either key.
+Palo Alto to Downtown Berkeley uses the bundled BART trips in `data/bart-mlbr-dbrk.json` (from BART's public GTFS). Other station pairs stay on Caltrain.
+
+ONE Agent is `POST /api/agent`. Copy `.env.example` to `.env` if you have keys. `XAI_API_KEY` calls Grok. `API_511_KEY` loads 511 service alerts for Caltrain (CT) and BART (BA), cached five minutes. With neither key, the panel uses the timetable and says live alerts are not connected.
 
 The bundled timetable covers 31 Jan 2026 through 31 Jan 2027 (`data/gtfs`, from https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip). Refresh those files when Caltrain publishes a new feed.

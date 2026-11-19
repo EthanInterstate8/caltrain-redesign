@@ -1,7 +1,18 @@
+import { bartRides } from "./bart";
 import { activeServices, getCatalog } from "./gtfs";
 import type { Catalog, StopTime, Trip } from "./gtfs";
 import { addDays, formatLongDate, formatTime, gtfsEpoch, todayYmd, zonedEpoch } from "./time";
 import type { Plan, Station, TripOption, WhenMode } from "./types";
+
+const BERKELEY: Station = {
+  id: "DBRK",
+  name: "Downtown Berkeley",
+  lat: 37.87011,
+  lon: -122.268109,
+  zone: "",
+  access: "unlisted",
+};
+const MIN_TRANSFER_MS = 4 * 60 * 1000;
 
 export type Query = {
   fromId?: string;
@@ -114,6 +125,7 @@ function mark(trips: Omit<TripOption, "recommended">[], when: WhenMode): TripOpt
 
 export function planJourney(query: Query): Plan | null {
   if (!query.fromId || !query.toId) return null;
+  if (query.fromId === "DBRK" || query.toId === "DBRK") return planBerkeley(query);
   const catalog = getCatalog();
   const from = catalog.byId.get(query.fromId);
   const to = catalog.byId.get(query.toId);
@@ -187,5 +199,115 @@ export function planJourney(query: Query): Plan | null {
 }
 
 export function listStations(): Station[] {
-  return getCatalog().stations;
+  return [...getCatalog().stations, BERKELEY];
+}
+
+function planBerkeley(query: Query): Plan {
+  if (query.fromId !== "palo_alto" || query.toId !== "DBRK") {
+    return {
+      ok: false,
+      error: "Downtown Berkeley is on BART. This preview plans it only from Palo Alto, with a transfer at Millbrae.",
+    };
+  }
+  const catalog = getCatalog();
+  const from = catalog.byId.get("palo_alto");
+  const millbrae = catalog.byId.get("place_MLBR");
+  if (!from || !millbrae) return { ok: false, error: "Palo Alto or Millbrae is missing from the Caltrain timetable." };
+
+  const now = query.now ?? Date.now();
+  const when: WhenMode = query.when === "depart" || query.when === "arrive" ? query.when : "now";
+  const date = query.date && /^\d{4}-\d{2}-\d{2}$/.test(query.date) ? query.date : todayYmd(now);
+  const clock = parseClock(query.time);
+
+  const build = (ymd: string) => {
+    const trains = ridesOn(catalog, from, millbrae, ymd);
+    const bart = bartRides(ymd);
+    const joined: Omit<TripOption, "recommended">[] = [];
+    for (const train of trains) {
+      const bartRide = bart.find((ride) => ride.departEpoch >= train.arriveEpoch + MIN_TRANSFER_MS);
+      if (!bartRide) continue;
+      const waitMin = Math.round((bartRide.departEpoch - train.arriveEpoch) / 60000);
+      joined.push({
+        ...train,
+        id: `${ymd}-${train.tripId}-${bartRide.id}`,
+        headsign: "Downtown Berkeley",
+        arriveEpoch: bartRide.arriveEpoch,
+        arriveLabel: formatTime(bartRide.arriveEpoch),
+        durationMin: Math.max(1, Math.round((bartRide.arriveEpoch - train.departEpoch) / 60000)),
+        calls: [
+          train.calls[0],
+          { id: "place_MLBR", name: "Millbrae", time: train.arriveLabel },
+          { id: "DBRK", name: "Downtown Berkeley", time: formatTime(bartRide.arriveEpoch) },
+        ],
+        destAccess: "unlisted",
+        transfer: {
+          millbraeArrive: train.arriveLabel,
+          millbraeArriveEpoch: train.arriveEpoch,
+          waitMin,
+          bartDepart: formatTime(bartRide.departEpoch),
+          bartDepartEpoch: bartRide.departEpoch,
+          bartArrive: formatTime(bartRide.arriveEpoch),
+          bartLine: bartRide.line,
+          bartColor: bartRide.color,
+          bartHeadsign: bartRide.headsign,
+          bartTripId: bartRide.id,
+          boardStop: bartRide.fromStop === "W40-3" ? "Millbrae (Caltrain Transfer Platform)" : "Millbrae",
+        },
+      });
+    }
+    return joined.sort((a, b) => a.arriveEpoch - b.arriveEpoch || a.departEpoch - b.departEpoch);
+  };
+
+  const pick = (rows: Omit<TripOption, "recommended">[]) => {
+    if (rows.length === 0) return [];
+    const best = rows[0];
+    const backup = rows.find((row) => row.tripId !== best.tripId && row.departEpoch > best.departEpoch) ?? rows[1];
+    const chosen = backup ? [best, backup] : [best];
+    return chosen.map((row, index) => ({ ...row, recommended: index === 0 }));
+  };
+
+  if (when === "now") {
+    let rows = build(date).filter((row) => row.departEpoch >= now - 30_000);
+    let used = date;
+    let nextDay = false;
+    if (rows.length === 0) {
+      used = addDays(date, 1);
+      rows = build(used);
+      nextDay = rows.length > 0;
+    }
+    const trips = pick(rows);
+    if (trips.length === 0) {
+      return { ok: false, error: "No Caltrain and BART connection from Palo Alto to Downtown Berkeley on this timetable." };
+    }
+    return {
+      ok: true,
+      from,
+      to: BERKELEY,
+      date: used,
+      when,
+      nextDay,
+      note: "Caltrain to Millbrae, then BART Red from the Millbrae transfer platform. The transfer minutes are the gap in the timetable. Connections shorter than 4 minutes are not offered. Live delays are not connected.",
+      trips,
+    };
+  }
+
+  if (!clock) return { ok: false, error: "Enter a time for that journey." };
+  const stamp = zonedEpoch(date, clock.h, clock.m, 0);
+  const all = build(date);
+  const filtered = when === "arrive" ? all.filter((row) => row.arriveEpoch <= stamp) : all.filter((row) => row.departEpoch >= stamp);
+  const trips = pick(when === "arrive" ? filtered.reverse() : filtered);
+  if (when === "arrive" && trips.length) trips.forEach((trip, index) => (trip.recommended = index === 0));
+  if (trips.length === 0) {
+    return { ok: false, error: "No Caltrain and BART connection at that time." };
+  }
+  return {
+    ok: true,
+    from,
+    to: BERKELEY,
+    date,
+    when,
+    nextDay: false,
+    note: "Caltrain to Millbrae, then BART Red from the Millbrae transfer platform. The transfer minutes are the gap in the timetable. Connections shorter than 4 minutes are not offered. Live delays are not connected.",
+    trips,
+  };
 }

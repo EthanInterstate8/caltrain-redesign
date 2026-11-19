@@ -15,6 +15,20 @@ export type StopCall = {
   time: string;
 };
 
+export type Transfer = {
+  millbraeArrive: string;
+  millbraeArriveEpoch: number;
+  waitMin: number;
+  bartDepart: string;
+  bartDepartEpoch: number;
+  bartArrive: string;
+  bartLine: string;
+  bartColor: string;
+  bartHeadsign: string;
+  bartTripId: string;
+  boardStop: string;
+};
+
 export type TripOption = {
   id: string;
   tripId: string;
@@ -30,6 +44,7 @@ export type TripOption = {
   recommended: boolean;
   originAccess: Access;
   destAccess: Access;
+  transfer?: Transfer;
 };
 
 export type Plan =
