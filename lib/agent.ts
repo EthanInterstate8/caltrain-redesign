@@ -9,7 +9,61 @@ export type AgentAction = "protect" | "explain" | "access";
 
 type Alert = { agency: string; text: string };
 
-const cache = globalThis as unknown as { __alerts?: { at: number; value: Alert[] | null } };
+const cache = globalThis as unknown as { __alerts?: { at: number; value: Alert[] } };
+
+const NOT_CONNECTED = "Live alerts not connected.";
+const NO_ALERTS = "No active service alerts right now.";
+
+const ticketFacts = {
+  source: "https://www.caltrain.com/fares",
+  howToBuy: "https://www.caltrain.com/fares/how-buy",
+  facts: [
+    "Fares are zone-based: the price depends on how many zones you ride. San Francisco to Palo Alto is three zones. Do not quote a price; send riders to https://www.caltrain.com/fares.",
+    "Clipper is the reloadable card for cash value and a Monthly Pass. Riders can use a physical card or a digital Clipper card.",
+    "A Clipper card can be added to Apple Pay or Google Pay, or used from the Clipper app, then tapped at the validator.",
+    "Contactless tap-to-pay is accepted for adult fares: a contactless Visa, Mastercard, American Express, or Discover credit or debit card, or that card in Apple Pay or Google Pay. Youth, Senior, Clipper START, and Clipper Access fares still need a registered Clipper card.",
+    "The Caltrain fares pages do not list a Caltrain Mobile app for buying tickets. They tell riders to use Clipper or a station ticket machine.",
+    "Ticket machines at stations sell one-way tickets and day passes, sell adult Clipper cards, and can load cash or transit products onto Clipper cards. They take coins, bills, and credit or Visa/Mastercard debit. Tickets are for the day of travel.",
+    "Tap on and tap off at the Clipper validator for each trip, with the same card or phone, one card at a time.",
+    "A one-way ticket is valid for four hours in one direction. A day pass allows unlimited travel inside the zones purchased and is sold at a ticket machine.",
+  ],
+};
+
+const GROK_SYSTEM = [
+  "You are ONE, a friendly Caltrain guide. Write 2 to 5 concise sentences in plain language.",
+  "Answer general questions about Caltrain, Bay Area transit, stations, travel tips, and what to do near a station. Use general knowledge plus the facts you are given. Do not refuse just because a schedule or feed does not cover the question.",
+  "Treat the bundled timetable, liveAlerts, and ticketFacts as authoritative when they apply. Do not invent train times, train numbers, or fares. If a price is not in ticketFacts, give https://www.caltrain.com/fares instead.",
+  "For delays, elevator outages, and crowding, say only what liveAlerts and the timetable say. Never guess. If liveAlerts is an empty list and the rider asks about delays or whether a train is on time, say exactly: No active service alerts right now. If liveAlerts is not_connected, say live alerts are not connected.",
+  "Never mention null, missing fields, JSON, or how the data is structured.",
+  "If there is no question: protect offers a backup from the timetable, explain describes the transfer, and access uses only the accessibility facts given.",
+].join(" ");
+
+function runtimeEnv(name: string): string | undefined {
+  const value = process.env[name];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function liveLine(alerts: Alert[] | null): string {
+  if (!alerts) return NOT_CONNECTED;
+  if (alerts.length === 0) return NO_ALERTS;
+  return `Live 511 alerts: ${alerts.map((alert) => `${alert.agency}: ${alert.text}`).join(" ")}`;
+}
+
+function tidy(text: string): string {
+  return text
+    .replace(/\b(null fields?|internal data structure|JSON)\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .trim();
+}
+
+function withLiveStatus(text: string, alerts: Alert[] | null): string {
+  if (!/live alerts not connected/i.test(text)) return tidy(text);
+  const body = text.replace(/Live alerts not connected\.?\s*/gi, "").trim();
+  if (!alerts) return tidy(`${NOT_CONNECTED} ${body}`);
+  if (alerts.length === 0) return tidy(body.startsWith(NO_ALERTS) ? body : `${NO_ALERTS} ${body}`);
+  return tidy(`${liveLine(alerts)} ${body}`);
+}
 
 function accessFact(access: TripOption["originAccess"]): string {
   if (access === "step-free") return "GTFS wheelchair_boarding is 1 (accessible)";
@@ -28,8 +82,7 @@ function factsFor(trip: TripOption, backup: TripOption | undefined) {
   const elevators = millbraeElevators();
   return {
     liveAlerts: "not_connected" as const,
-    instruction:
-      "Use only these fields. Do not invent delays, outages, or elevator status. If liveAlerts is not_connected, say live alerts are not connected.",
+    ticketFacts,
     itinerary: {
       train: trip.number,
       type: trip.type,
@@ -102,56 +155,95 @@ function deterministic(action: AgentAction, trip: TripOption, backup: TripOption
 }
 
 async function liveAlerts(): Promise<Alert[] | null> {
-  const key = process.env.API_511_KEY;
+  const key = runtimeEnv("API_511_KEY");
   if (!key) return null;
-  if (cache.__alerts && Date.now() - cache.__alerts.at < 5 * 60 * 1000) return cache.__alerts.value;
+  const cached = cache.__alerts;
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.value;
   const alerts: Alert[] = [];
+  let connected = false;
   for (const agency of ["CT", "BA"] as const) {
-    const url = `https://api.511.org/transit/servicealerts?api_key=${encodeURIComponent(key)}&agency=${agency}&format=json`;
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) continue;
-    const json = (await res.json()) as { entity?: { alert?: Record<string, unknown> }[] };
-    for (const entity of json.entity ?? []) {
-      const text = alertText(entity.alert);
-      if (text) alerts.push({ agency, text: text.slice(0, 400) });
+    try {
+      const url = `https://api.511.org/transit/servicealerts?api_key=${encodeURIComponent(key)}&agency=${agency}&format=json`;
+      const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const raw = (await res.text()).replace(/^\uFEFF/, "").trim();
+      const json = JSON.parse(raw) as {
+        entity?: { alert?: Record<string, unknown> }[];
+        error?: unknown;
+        Error?: unknown;
+        message?: unknown;
+        Message?: unknown;
+      };
+      if ((json.error || json.Error || json.message || json.Message) && !Array.isArray(json.entity)) continue;
+      connected = true;
+      for (const entity of json.entity ?? []) {
+        const text = alertText(entity.alert);
+        if (text) alerts.push({ agency, text: text.slice(0, 400) });
+      }
+    } catch {
+      // Skip this agency. Do not log: the request URL contains the key.
     }
   }
+  if (!connected) return null;
   const value = alerts.slice(0, 12);
   cache.__alerts = { at: Date.now(), value };
   return value;
 }
 
+function translationText(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const translation = (value as { translation?: { text?: string } | { text?: string }[] }).translation;
+  const list = Array.isArray(translation) ? translation : translation ? [translation] : [];
+  return list.map((item) => item.text).filter(Boolean).join(" ");
+}
+
 function alertText(alert: Record<string, unknown> | undefined): string {
   if (!alert) return "";
-  const header = alert.header_text ?? alert.headerText;
-  if (!header || typeof header !== "object") return "";
-  const translations = (header as { translation?: { text?: string }[] }).translation;
-  return translations?.map((item) => item.text).filter(Boolean).join(" ") ?? "";
+  return (
+    translationText(alert.header_text ?? alert.headerText) ||
+    translationText(alert.description_text ?? alert.descriptionText)
+  );
+}
+
+function omitEmpty(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(omitEmpty);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== null && item !== undefined)
+        .map(([key, item]) => [key, omitEmpty(item)]),
+    );
+  }
+  return value;
 }
 
 async function grok(action: AgentAction, payload: unknown): Promise<string | null> {
-  const key = process.env.XAI_API_KEY;
+  const key = runtimeEnv("XAI_API_KEY");
   if (!key) return null;
-  const model = process.env.XAI_MODEL || "grok-4";
-  const res = await fetch("https://api.x.ai/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are ONE Agent on a Caltrain planner. Use only the JSON facts. Never invent delays, outages, elevator status, or times. If liveAlerts is not_connected, say live alerts are not connected. Write 2 to 5 plain sentences for the requested action: protect (backup if this trip fails), explain (the transfer steps), or access (only the accessibility facts given).",
-        },
-        { role: "user", content: JSON.stringify({ action, facts: payload }) },
-      ],
-    }),
-  });
-  if (!res.ok) return null;
-  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  return json.choices?.[0]?.message?.content?.trim() || null;
+  try {
+    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(12000),
+      body: JSON.stringify({
+        model: "grok-4.7",
+        temperature: 0,
+        messages: [
+          {
+            role: "system",
+            content: GROK_SYSTEM,
+          },
+          { role: "user", content: JSON.stringify({ action, facts: omitEmpty(payload) }) },
+        ],
+      }),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    return json.choices?.[0]?.message?.content?.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function runAgent(query: Query & { action?: string; tripId?: string }) {
@@ -170,9 +262,7 @@ export async function runAgent(query: Query & { action?: string; tripId?: string
   } catch {
     alerts = null;
   }
-  const payload = alerts
-    ? { ...base, liveAlerts: alerts.length ? alerts : "none_in_feed" }
-    : base;
+  const payload = { ...base, ticketFacts, liveAlerts: alerts ?? "not_connected" };
   const titles = { protect: "Rescue", explain: "Confidence", access: "Access" };
   let text: string | null = null;
   try {
@@ -181,10 +271,7 @@ export async function runAgent(query: Query & { action?: string; tripId?: string
     text = null;
   }
   if (!text) text = deterministic(action, trip, backup);
-  else if (!process.env.API_511_KEY && !/live alerts not connected/i.test(text)) {
-    text = `Live alerts not connected. ${text}`;
-  }
-  return { title: titles[action], text, live: Boolean(alerts) };
+  return { title: titles[action], text: withLiveStatus(text, alerts), live: alerts !== null };
 }
 
 export type AskPlan = { label: string; fromId: string; toId: string };
@@ -282,11 +369,16 @@ export async function askQuestion(question: string, context?: Query) {
       : null,
     access: trip?.accessNotes ?? null,
     elevatorStops: elevators,
+    ticketFacts,
   };
   let text: string | null = null;
-  if (process.env.XAI_API_KEY) {
+  if (runtimeEnv("XAI_API_KEY")) {
     try {
-      text = await grok("explain", { ...facts, instruction: "Answer the question using only these facts. Never invent delays or elevator status." });
+      text = await grok("explain", {
+        ...facts,
+        instruction:
+          "Answer the question helpfully. Use ticketFacts for how to pay. Use the timetable for times. For delays and elevators, use only liveAlerts.",
+      });
     } catch {
       text = null;
     }
@@ -309,10 +401,8 @@ export async function askQuestion(question: string, context?: Query) {
         : `${live} I can only check stations in the Caltrain GTFS feed.`;
       sources.push("https://www.bart.gov/schedules/elevators");
     } else {
-      text = `${live} I can look up a Caltrain trip, a station's wheelchair boarding flag, or the Palo Alto to Downtown Berkeley transfer. I won't guess a delay.`;
+      text = `${live} I can look up a train, a station, or how to pay. Fares and ticket options are at https://www.caltrain.com/fares.`;
     }
-  } else if (!process.env.API_511_KEY && !/live alerts not connected/i.test(text)) {
-    text = `Live alerts not connected. ${text}`;
   }
-  return { title: "ONE Agent", text, live: Boolean(alerts), sources, plans };
+  return { title: "ONE Agent", text: withLiveStatus(text, alerts), live: alerts !== null, sources, plans };
 }

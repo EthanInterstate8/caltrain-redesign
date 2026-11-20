@@ -10,7 +10,7 @@ const geist = Geist({
 
 export const metadata: Metadata = {
   title: "CALTRAIN ONE",
-  description: "An unofficial Caltrain planner. Search two stations and see the next trains, with type and a live countdown.",
+  description: "Search two stations and see the next Caltrain trips, with type and a live countdown.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
