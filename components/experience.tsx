@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { photos } from "@/lib/photos";
 import { LineMap } from "@/components/line-map";
 import { SiteNav } from "@/components/site-nav";
+import { TripMap } from "@/components/trip-map";
 import { formatClock, formatCountdown } from "@/lib/time";
 import type { Access, Plan, ServiceInfo, Station, TripOption, WhenMode } from "@/lib/types";
 
@@ -243,7 +244,7 @@ export function Experience({
               compact
             />
             <p className="under-search">
-              <a className="textbtn map-jump" href="#line">
+              <a className="textbtn map-jump" href="#trip-map">
                 View on the line
               </a>
               <a className="textbtn" href="/">
@@ -308,6 +309,7 @@ export function Experience({
             </div>
           </section>
           <div className="map-col">
+            <TripMap stations={stations} from={plan.from} to={plan.to} trip={selectedTrip} />
             <LineMap
               stations={stations.filter((station) => station.id !== "DBRK")}
               fromId={plan.from.id}
@@ -792,7 +794,7 @@ function AskOne({ onPlan }: { onPlan: (fromId: string, toId: string) => void }) 
 
   async function ask(question: string) {
     const text = question.trim();
-    if (!text) return;
+    if (!text || loading) return;
     setValue(text);
     setLoading(true);
     try {
@@ -800,8 +802,20 @@ function AskOne({ onPlan }: { onPlan: (fromId: string, toId: string) => void }) 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: text }),
+        signal: AbortSignal.timeout(20000),
       });
-      setAnswer(await res.json());
+      const data = (await res.json()) as {
+        title?: string;
+        text?: string;
+        sources?: string[];
+        plans?: { label: string; fromId: string; toId: string }[];
+      };
+      setAnswer({
+        title: data.title || "ONE Agent",
+        text: data.text || "I couldn't answer that just now.",
+        sources: data.sources ?? [],
+        plans: data.plans ?? [],
+      });
     } catch {
       setAnswer({
         title: "ONE Agent",
@@ -830,8 +844,8 @@ function AskOne({ onPlan }: { onPlan: (fromId: string, toId: string) => void }) 
           placeholder="Ask anything: Is my 5pm train to SF on time? Which stations have elevators? How do I get to Berkeley?"
           onChange={(event) => setValue(event.target.value)}
         />
-        <button className="go" type="submit">
-          {loading ? "…" : "Ask"}
+        <button className="go ask-go" type="submit" disabled={loading} aria-busy={loading}>
+          {loading ? "Thinking…" : "ASK"}
         </button>
       </div>
       <div className="chips">
