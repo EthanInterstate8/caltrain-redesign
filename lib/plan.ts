@@ -362,7 +362,7 @@ function berkeleySteps(
   return [
     `${board}.`,
     `${off}.`,
-    `Transfer. The timetable leaves ${waitMin} minutes. No walk time is published in these feeds. BART ${bartRide.line} (${bartRide.color}) toward ${bartRide.headsign} departs ${formatTime(bartRide.departEpoch)} from ${platform}.`,
+    `Transfer. The timetable leaves ${waitMin} minutes. No walk time is published in these feeds. BART Red line toward ${bartRide.headsign} departs ${formatTime(bartRide.departEpoch)} from ${platform}.`,
     `Arrive Downtown Berkeley at ${formatTime(bartRide.arriveEpoch)}. The arrival stop in the BART feed is platform_code 1.`,
   ];
 }

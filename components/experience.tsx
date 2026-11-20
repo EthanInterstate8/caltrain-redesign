@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { photos } from "@/lib/photos";
 import { LineMap } from "@/components/line-map";
 import { SiteNav } from "@/components/site-nav";
-import { TripMap } from "@/components/trip-map";
+
+const TripMap = dynamic(() => import("@/components/trip-map").then((mod) => mod.TripMap), { ssr: false });
 import { formatClock, formatCountdown } from "@/lib/time";
 import type { Access, Plan, ServiceInfo, Station, TripOption, WhenMode } from "@/lib/types";
 

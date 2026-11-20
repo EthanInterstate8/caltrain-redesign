@@ -300,7 +300,21 @@ h1 .worry { display: block; color: var(--red); }
   background: #F7F5F0;
   border: 1px solid var(--line);
 }
-.trip-map svg { display: block; width: 100%; height: auto; }
+.trip-map .leaflet-container { height: 420px; width: 100%; background: #F7F5F0; }
+.trip-map .leaflet-pane { z-index: 1; }
+.trip-map .leaflet-top,
+.trip-map .leaflet-bottom { z-index: 2; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .trip-map figcaption {
   display: flex;
   flex-wrap: wrap;
