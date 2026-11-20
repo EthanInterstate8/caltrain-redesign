@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { photos } from "@/lib/photos";
 import { LineMap } from "@/components/line-map";
+import { SiteNav } from "@/components/site-nav";
 import { formatClock, formatCountdown } from "@/lib/time";
 import type { Access, Plan, ServiceInfo, Station, TripOption, WhenMode } from "@/lib/types";
 
@@ -103,25 +104,11 @@ export function Experience({
       <a className="skip" href="#search">
         Skip to search
       </a>
-      <header className="nav">
-        <a className="brand" href="/">
-          <svg className="mark" viewBox="0 0 16 16" aria-hidden>
-            <rect width="16" height="16" fill="#172233" />
-            <rect y="7" width="16" height="2" fill="#D92632" />
-          </svg>
-          <span>
-            CALTRAIN <em>ONE</em>
-          </span>
-        </a>
-        <div className="nav-side">
-          <a href="#line">Line</a>
-          <a href="#status">Status</a>
-          <span className="unofficial">Unofficial concept</span>
-          <span className="clock" suppressHydrationWarning>
-            {now ? `${formatClock(now)} PT` : ""}
-          </span>
-        </div>
-      </header>
+      <SiteNav>
+        <span className="clock" suppressHydrationWarning>
+          {now ? `${formatClock(now)} PT` : ""}
+        </span>
+      </SiteNav>
 
       {plan?.ok ? (
         <div className="result-head">
@@ -421,7 +408,6 @@ export function Experience({
       )}
 
       <footer className="foot">
-        <span>Unofficial redesign. Not affiliated with Caltrain.</span>
         <span>
           Schedule from the{" "}
           <a href="https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip">Caltrain GTFS feed</a>.
