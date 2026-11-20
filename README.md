@@ -43,6 +43,10 @@ A transit page gets clearer when the times share a column and the map is the sam
 
 Draft for the team: Grok Bot scaffolded the Next.js app, wired the GTFS trip search, and iterated the layout from screenshots of the desktop and phone homepage.
 
+## Grok Bot session export
+
+[Grok Bot session export](docs/grok-bot-session-export.md)
+
 ## How to run it
 
 ```bash
