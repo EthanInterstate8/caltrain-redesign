@@ -521,6 +521,18 @@ h1 .worry { display: block; color: var(--red); }
   gap: 8px 18px;
   padding-top: 4px;
 }
+.xfer {
+  grid-column: 2 / -1;
+  margin: 4px 0 0;
+  font-size: 15px;
+}
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 6px 0 2px;
+  vertical-align: baseline;
+}
 .calls {
   grid-column: 2 / -1;
   color: var(--muted);

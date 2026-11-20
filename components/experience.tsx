@@ -36,7 +36,13 @@ export function Experience({
   const [date, setDate] = useState(initial.date || "");
   const [arm, setArm] = useState<Arm>("from");
   const [selected, setSelected] = useState(plan && plan.ok ? plan.trips[0]?.id ?? "" : "");
-  const [hook, setHook] = useState<{ trip: string; kind: "protect" | "explain" | "access" } | null>(null);
+  const [hook, setHook] = useState<{
+    trip: string;
+    kind: "protect" | "explain" | "access";
+    loading: boolean;
+    title: string;
+    text: string;
+  } | null>(null);
   const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
@@ -151,6 +157,7 @@ export function Experience({
                 setToId(fromId);
               }}
               onTry={() => fill("palo_alto", "san_francisco")}
+              onBerkeley={() => fill("palo_alto", "DBRK")}
               onSubmit={() => search()}
               pending={pending}
             />
@@ -173,7 +180,7 @@ export function Experience({
               </article>
             </div>
           </div>
-          <LineMap stations={stations} fromId={fromId} toId={toId} onPick={pickStation} />
+          <LineMap stations={stations.filter((station) => station.id !== "DBRK")} fromId={fromId} toId={toId} onPick={pickStation} />
         </section>
       )}
 
@@ -202,6 +209,7 @@ export function Experience({
                 setToId(fromId);
               }}
               onTry={() => fill("palo_alto", "san_francisco")}
+              onBerkeley={() => fill("palo_alto", "DBRK")}
               onSubmit={() => search()}
               pending={pending}
               compact
@@ -222,17 +230,50 @@ export function Experience({
                   trip={trip}
                   now={now}
                   active={trip.id === selectedTrip?.id}
-                  hook={hook?.trip === trip.id ? hook.kind : null}
-                  next={plan.trips.find((item) => item.departEpoch > trip.departEpoch)}
+                  hook={hook?.trip === trip.id ? hook : null}
                   onSelect={() => {
                     setSelected(trip.id);
                     setHook(null);
                   }}
                   onHook={(kind) => {
                     setSelected(trip.id);
-                    setHook((current) =>
-                      current?.trip === trip.id && current.kind === kind ? null : { trip: trip.id, kind },
-                    );
+                    if (hook?.trip === trip.id && hook.kind === kind && !hook.loading) {
+                      setHook(null);
+                      return;
+                    }
+                    setHook({ trip: trip.id, kind, loading: true, title: "", text: "" });
+                    void fetch("/api/agent", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: kind,
+                        fromId: plan.from.id,
+                        toId: plan.to.id,
+                        when,
+                        time,
+                        date,
+                        tripId: trip.id,
+                      }),
+                    })
+                      .then((res) => res.json())
+                      .then((data: { title?: string; text?: string }) => {
+                        setHook({
+                          trip: trip.id,
+                          kind,
+                          loading: false,
+                          title: data.title || "ONE Agent",
+                          text: data.text || "No answer.",
+                        });
+                      })
+                      .catch(() => {
+                        setHook({
+                          trip: trip.id,
+                          kind,
+                          loading: false,
+                          title: "ONE Agent",
+                          text: "Live alerts not connected. The request failed, so no delay or outage is shown.",
+                        });
+                      });
                   }}
                 />
               ))}
@@ -240,10 +281,10 @@ export function Experience({
           </section>
           <div className="map-col">
             <LineMap
-              stations={stations}
+              stations={stations.filter((station) => station.id !== "DBRK")}
               fromId={plan.from.id}
-              toId={plan.to.id}
-              calls={selectedTrip?.calls.map((call) => call.id)}
+              toId={plan.to.id === "DBRK" ? "place_MLBR" : plan.to.id}
+              calls={selectedTrip?.calls.filter((call) => call.id !== "DBRK").map((call) => call.id)}
               onPick={pickStation}
             />
           </div>
@@ -339,6 +380,7 @@ function SearchForm({
   onDate,
   onSwap,
   onTry,
+  onBerkeley,
   onSubmit,
   pending,
   compact,
@@ -358,6 +400,7 @@ function SearchForm({
   onDate: (date: string) => void;
   onSwap: () => void;
   onTry: () => void;
+  onBerkeley: () => void;
   onSubmit: () => void;
   pending: boolean;
   compact?: boolean;
@@ -399,6 +442,9 @@ function SearchForm({
           </button>
           <button className="textbtn" type="button" onClick={onTry}>
             Palo Alto to San Francisco
+          </button>
+          <button className="textbtn" type="button" onClick={onBerkeley}>
+            Palo Alto to Downtown Berkeley
           </button>
         </div>
       )}
@@ -572,15 +618,13 @@ function TripRow({
   now,
   active,
   hook,
-  next,
   onSelect,
   onHook,
 }: {
   trip: TripOption;
   now: number | null;
   active: boolean;
-  hook: "protect" | "explain" | "access" | null;
-  next?: TripOption;
+  hook: { kind: "protect" | "explain" | "access"; loading: boolean; title: string; text: string } | null;
   onSelect: () => void;
   onHook: (kind: "protect" | "explain" | "access") => void;
 }) {
@@ -590,7 +634,6 @@ function TripRow({
         ? "Origin is not step-free"
         : "Destination is not step-free"
       : "";
-  const calls = trip.calls.map((call) => call.name).join(" · ");
   return (
     <article className={active ? "row is-on" : "row"} data-trip={trip.number} onClick={onSelect}>
       <div className="num">
@@ -610,9 +653,7 @@ function TripRow({
       </div>
       <div className="meta">
         <div>{trip.durationMin} min</div>
-        <div>
-          {Math.max(trip.calls.length - 1, 1)} stops · Direct
-        </div>
+        <div>{trip.transfer ? "1 transfer" : `${Math.max(trip.calls.length - 1, 1)} stops · Direct`}</div>
         <div className="count" suppressHydrationWarning>
           {now ? formatCountdown(trip.departEpoch, now) : "Scheduled"}
         </div>
@@ -629,48 +670,26 @@ function TripRow({
           Check accessibility
         </button>
       </div>
-      {hook === "protect" ? (
-        <div className="hook">
-          <h3>Rescue</h3>
-          <p>
-            No live disruption feed is loaded, so this does not invent a delay.{" "}
-            {next
-              ? `If you miss ${trip.number}, the next timetable departure is ${next.number} ${next.type} at ${next.departLabel}, arriving ${next.arriveLabel}.`
-              : "There is no later train in this list."}
-          </p>
-          {next ? (
-            <button className="textbtn" type="button" onClick={() => onSelect()}>
-              The backup is train {next.number}
-            </button>
-          ) : null}
-        </div>
+      {trip.transfer ? (
+        <p className="xfer">
+          Millbrae {trip.transfer.millbraeArrive}
+          {" · "}
+          {trip.transfer.waitMin} min transfer
+          {" · "}
+          <span className="swatch" style={{ background: trip.transfer.bartColor }} aria-hidden />
+          BART {trip.transfer.bartLine} {trip.transfer.bartDepart}
+          {" · "}
+          {trip.transfer.boardStop}
+        </p>
       ) : null}
-      {hook === "explain" ? (
-        <div className="hook">
-          <h3>Confidence</h3>
-          <p>
-            Stay on train {trip.number}, the {trip.type} toward {trip.headsign}. This is a direct Caltrain ride with no
-            transfer. It calls at {calls}.
-          </p>
-        </div>
-      ) : null}
-      {hook === "access" ? (
-        <div className="hook">
-          <h3>Access</h3>
-          <p>
-            {trip.calls[0]?.name}: {accessSentence(trip.originAccess)}. {trip.calls[trip.calls.length - 1]?.name}:{" "}
-            {accessSentence(trip.destAccess)}. Elevator outages are not in this preview.
-          </p>
+      {hook ? (
+        <div className="hook" data-agent={hook.kind}>
+          <h3>{hook.loading ? "ONE Agent" : hook.title}</h3>
+          <p>{hook.loading ? "Checking the timetable…" : hook.text}</p>
         </div>
       ) : null}
     </article>
   );
-}
-
-function accessSentence(access: Access): string {
-  if (access === "step-free") return "GTFS marks the platform wheelchair boarding as accessible";
-  if (access === "not-step-free") return "GTFS marks the platform as not wheelchair accessible";
-  return "GTFS does not publish a wheelchair boarding value";
 }
 
 function badgeClass(type: string): string {
