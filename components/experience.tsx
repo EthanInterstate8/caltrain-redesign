@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { photos } from "@/lib/photos";
 import { LineMap } from "@/components/line-map";
 import { formatClock, formatCountdown } from "@/lib/time";
 import type { Access, Plan, ServiceInfo, Station, TripOption, WhenMode } from "@/lib/types";
@@ -129,18 +131,40 @@ export function Experience({
             <span>to {plan.to.name}</span>
           </h1>
           <p className="note">{plan.note}</p>
+          <figure className="result-photo">
+            <Image
+              src={photos.station}
+              alt="An electric Caltrain train at a station platform, seen from above, with riders on the platform."
+              width={1600}
+              height={900}
+              sizes="100vw"
+            />
+          </figure>
         </div>
       ) : (
+        <>
         <section className="hero">
-          <div>
-            <p className="kicker">Caltrain, edited</p>
+          <div className="hero-scrim">
+            <p className="kicker">Where are you headed today?</p>
             <h1>
               Go further.
               <span className="worry">Worry less.</span>
             </h1>
             <p className="dek">
-              The next train, the kind of train, and how many minutes you have. One search, then the line.
+              Tell us the stations. We’ll show the train, the transfer, and a real backup if you miss it.
             </p>
+          </div>
+          <div className="hero-frame">
+            <Image
+              src={photos.hero}
+              alt="Riders wait on a Caltrain platform as a red and white electric train arrives."
+              fill
+              priority
+              sizes="(max-width: 900px) 100vw, 46vw"
+            />
+          </div>
+        </section>
+        <div className="hero-follow">
             <SearchForm
               stations={stations}
               from={from}
@@ -170,26 +194,29 @@ export function Experience({
               pending={pending}
             />
             {plan && !plan.ok ? <p className="empty">{plan.error}</p> : null}
-            <div className="agent agent-hero">
+            <h2 className="section-title">How CALTRAIN ONE helps</h2>
+            <div className="agent">
               <article>
                 <div className="idx">01</div>
                 <h2>Rescue</h2>
-                <p>The next real train if this one fails, and the minutes you lose.</p>
+                <p>Miss this train? We’ll show the next real one, and how much later you arrive.</p>
               </article>
               <article>
                 <div className="idx">02</div>
                 <h2>Confidence</h2>
-                <p>The stops this train actually makes. No invented transfer.</p>
+                <p>Boarding steps in order: which train, where you get off, and the transfer.</p>
               </article>
               <article>
                 <div className="idx">03</div>
                 <h2>Access</h2>
-                <p>Step-free only when the timetable marks the platform.</p>
+                <p>Turn on step-free when you need a longer, safer connection. We only mark what the data says.</p>
               </article>
             </div>
-          </div>
+        </div>
+        <div className="band line-home">
           <LineMap stations={stations.filter((station) => station.id !== "DBRK")} fromId={fromId} toId={toId} onPick={pickStation} />
-        </section>
+        </div>
+        </>
       )}
 
       {pending ? <div className="progress" role="status" aria-label="Looking up trains" /> : null}
@@ -326,6 +353,23 @@ export function Experience({
               </article>
             </div>
           </section>
+          <section className="band boarding">
+            <div>
+              <h2 className="section-title">Boarding</h2>
+              <p className="section-dek">
+                Wait on the platform for your train number. If you need a hand boarding, stay where the conductor can see you. Bikes board at the marked doors.
+              </p>
+            </div>
+            <figure>
+              <Image
+                src={photos.boarding}
+                alt="Riders and a bicycle beside an open Caltrain door at San Francisco platform 4."
+                width={1200}
+                height={1200}
+                sizes="(max-width: 900px) 100vw, 42vw"
+              />
+            </figure>
+          </section>
           <section className="band" id="status">
             <div className="status">
               <div>
@@ -347,7 +391,16 @@ export function Experience({
             </div>
           </section>
           <section className="band" aria-labelledby="stations-title">
-            <h2 className="section-title" id="stations-title">
+            <figure className="station-photo">
+            <Image
+              src={photos.station}
+              alt="Aerial view of a Caltrain station with a red and white electric train along the platform."
+              width={1600}
+              height={900}
+              sizes="100vw"
+            />
+          </figure>
+          <h2 className="section-title" id="stations-title">
               Stations
             </h2>
             <p className="section-dek">North to south. Access is the GTFS wheelchair boarding flag, not a guess.</p>
