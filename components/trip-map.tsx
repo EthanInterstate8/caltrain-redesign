@@ -138,11 +138,6 @@ export function TripMap({
             <i className="swatch bart" /> BART Red
           </span>
         ) : null}
-        {trip ? (
-          <span>
-            {trip.number} {trip.type}
-          </span>
-        ) : null}
       </figcaption>
     </figure>
   );
