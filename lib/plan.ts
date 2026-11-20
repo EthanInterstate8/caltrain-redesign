@@ -343,27 +343,12 @@ function berkeleySteps(
   bartRide: { line: string; color: string; headsign: string; departEpoch: number; arriveEpoch: number; fromStop: string },
 ): string[] {
   const direction = side(train.boardStopName);
-  const alightSide = side(train.alightStopName);
-  const board = [
-    `Board Caltrain ${train.number} (${train.type}) at Palo Alto`,
-    direction ? `${direction}, stop "${train.boardStopName}"` : train.boardStopName ? `stop "${train.boardStopName}"` : "",
-    `at ${train.departLabel}`,
-  ]
-    .filter(Boolean)
-    .join(", ");
   const ridden = Math.max(train.calls.length - 1, 1);
-  const off = [
-    `Ride ${ridden} stops and get off at Millbrae at ${train.arriveLabel}`,
-    alightSide ? `(${alightSide}, "${train.alightStopName}")` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const platform = bartRide.fromStop === "W40-3" ? "GTFS platform_code 3, Millbrae (Caltrain Transfer Platform)" : bartRide.fromStop;
   return [
-    `${board}.`,
-    `${off}.`,
-    `Transfer. The timetable leaves ${waitMin} minutes. No walk time is published in these feeds. BART Red line toward ${bartRide.headsign} departs ${formatTime(bartRide.departEpoch)} from ${platform}.`,
-    `Arrive Downtown Berkeley at ${formatTime(bartRide.arriveEpoch)}. The arrival stop in the BART feed is platform_code 1.`,
+    `Board Caltrain ${train.number} (${train.type}) at Palo Alto${direction ? `, ${direction}` : ""}, at ${train.departLabel}.`,
+    `Ride ${ridden} stops and get off at Millbrae at ${train.arriveLabel}.`,
+    `Transfer at Millbrae. The timetable leaves ${waitMin} minutes. BART Red line toward ${bartRide.headsign} departs ${formatTime(bartRide.departEpoch)} from the Millbrae transfer platform.`,
+    `Arrive Downtown Berkeley at ${formatTime(bartRide.arriveEpoch)}.`,
   ];
 }
 
