@@ -1,44 +1,53 @@
+"use client";
+
+import { useEffect } from "react";
+import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, useMap } from "react-leaflet";
+import type { LatLngExpression } from "leaflet";
+import "leaflet/dist/leaflet.css";
 import type { Station, TripOption } from "@/lib/types";
 
-const PAPER = "#F7F5F0";
 const NAVY = "#172233";
 const RED = "#D92632";
-const W = 360;
-const H = 460;
-const PAD = 56;
+const PAPER = "#F7F5F0";
 
-type Pt = { id: string; name: string; lat: number; lon: number };
+/** Parent stops on BART Red-N, Millbrae through Downtown Berkeley. From BART GTFS stops.txt. */
+const BART_RED: { id: string; name: string; lat: number; lon: number }[] = [
+  { id: "MLBR", name: "Millbrae", lat: 37.600237, lon: -122.386757 },
+  { id: "SFIA", name: "San Francisco International Airport", lat: 37.616091, lon: -122.391954 },
+  { id: "SBRN", name: "San Bruno", lat: 37.63773, lon: -122.416326 },
+  { id: "SSAN", name: "South San Francisco", lat: 37.664462, lon: -122.444211 },
+  { id: "COLM", name: "Colma", lat: 37.684635, lon: -122.466157 },
+  { id: "DALY", name: "Daly City", lat: 37.706259, lon: -122.468908 },
+  { id: "BALB", name: "Balboa Park", lat: 37.721747, lon: -122.447457 },
+  { id: "GLEN", name: "Glen Park", lat: 37.733235, lon: -122.433515 },
+  { id: "24TH", name: "24th Street / Mission", lat: 37.752419, lon: -122.418468 },
+  { id: "16TH", name: "16th Street / Mission", lat: 37.765173, lon: -122.419704 },
+  { id: "CIVC", name: "Civic Center / UN Plaza", lat: 37.779408, lon: -122.413826 },
+  { id: "POWL", name: "Powell Street", lat: 37.784606, lon: -122.407331 },
+  { id: "MONT", name: "Montgomery Street", lat: 37.789173, lon: -122.401587 },
+  { id: "EMBR", name: "Embarcadero", lat: 37.792762, lon: -122.397037 },
+  { id: "WOAK", name: "West Oakland", lat: 37.804888, lon: -122.295151 },
+  { id: "12TH", name: "12th Street / Oakland City Center", lat: 37.803482, lon: -122.27163 },
+  { id: "19TH", name: "19th Street Oakland", lat: 37.808078, lon: -122.268758 },
+  { id: "MCAR", name: "MacArthur", lat: 37.828803, lon: -122.267105 },
+  { id: "ASHB", name: "Ashby", lat: 37.853072, lon: -122.269771 },
+  { id: "DBRK", name: "Downtown Berkeley", lat: 37.87011, lon: -122.268109 },
+];
 
-function corridor(stations: Station[], a: Station, b: Station): Pt[] {
+function corridor(stations: Station[], a: Station, b: Station): Station[] {
   const lo = Math.min(a.lat, b.lat) - 0.002;
   const hi = Math.max(a.lat, b.lat) + 0.002;
   return stations
     .filter((station) => station.id !== "DBRK" && station.lat >= lo && station.lat <= hi)
-    .sort((left, right) => right.lat - left.lat)
-    .map((station) => ({ id: station.id, name: station.name, lat: station.lat, lon: station.lon }));
+    .sort((left, right) => right.lat - left.lat);
 }
 
-function project(points: Pt[]) {
-  const minLat = Math.min(...points.map((point) => point.lat));
-  const maxLat = Math.max(...points.map((point) => point.lat));
-  const minLon = Math.min(...points.map((point) => point.lon));
-  const maxLon = Math.max(...points.map((point) => point.lon));
-  const cos = Math.cos((((minLat + maxLat) / 2) * Math.PI) / 180);
-  const x0 = minLon * cos;
-  const y1 = maxLat;
-  const dx = Math.max((maxLon - minLon) * cos, 0.02);
-  const dy = Math.max(maxLat - minLat, 0.02);
-  const scale = Math.min((W - PAD * 2) / dx, (H - PAD * 2) / dy);
-  const ox = (W - dx * scale) / 2;
-  const oy = (H - dy * scale) / 2;
-  return (lat: number, lon: number) => ({
-    x: ox + (lon * cos - x0) * scale,
-    y: oy + (y1 - lat) * scale,
-  });
-}
-
-function pointsAttr(pts: { x: number; y: number }[]) {
-  return pts.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+function Fit({ positions }: { positions: LatLngExpression[] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (positions.length >= 2) map.fitBounds(positions as [number, number][], { padding: [28, 28] });
+  }, [map, positions]);
+  return null;
 }
 
 export function TripMap({
@@ -56,89 +65,70 @@ export function TripMap({
   const millbrae = stations.find((station) => station.id === "place_MLBR");
   const calEnd = transfer && millbrae ? millbrae : to;
   const spine = corridor(stations, from, calEnd);
-  const calPts: Pt[] = spine.length >= 2 ? spine : [from, calEnd].filter((station) => station.lat && station.lon);
-  const bartPts: Pt[] = transfer && millbrae ? [millbrae, to] : [];
-  const all = [...calPts, ...bartPts];
-  if (all.length < 2) return null;
-  const xy = project(all);
-  const cal = calPts.map((point) => ({ ...point, ...xy(point.lat, point.lon) }));
-  const bart = bartPts.map((point) => ({ ...point, ...xy(point.lat, point.lon) }));
-  const called = new Set((trip?.calls ?? []).map((call) => call.id));
-  const ends = new Set([from.id, calEnd.id, to.id]);
-
-  const labelFor = (id: string, name: string, x: number, y: number, sub?: string) => {
-    const anchor = x > W * 0.62 ? "end" : "start";
-    const dx = anchor === "start" ? 12 : -12;
-    return (
-      <text key={id} x={x + dx} y={sub ? y - 2 : y + 4} textAnchor={anchor} fill={NAVY} fontSize="13" fontFamily="inherit">
-        <tspan x={x + dx}>{name}</tspan>
-        {sub ? (
-          <tspan x={x + dx} dy="15" fill={RED} fontSize="11" letterSpacing="0.08em">
-            {sub}
-          </tspan>
-        ) : null}
-      </text>
-    );
-  };
-
+  const cal = (spine.length >= 2 ? spine : [from, calEnd]).map((station) => [station.lat, station.lon] as [number, number]);
+  const bart = transfer ? BART_RED.map((stop) => [stop.lat, stop.lon] as [number, number]) : [];
+  const positions = [...cal, ...bart];
   const caption = transfer
-    ? `Caltrain from ${from.name} to Millbrae, then BART Red to ${to.name}. Transfer at Millbrae.`
+    ? `Caltrain from ${from.name} to Millbrae, then BART Red line to ${to.name}. Transfer at Millbrae.`
     : `Caltrain from ${from.name} to ${to.name}.`;
 
   return (
     <figure className="trip-map" id="trip-map">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={caption}>
-        <rect width={W} height={H} fill={PAPER} />
-        <polyline points={pointsAttr(cal)} fill="none" stroke={NAVY} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
-        {bart.length >= 2 ? (
-          <polyline points={pointsAttr(bart)} fill="none" stroke={RED} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
-        ) : null}
-        {cal
-          .filter((point) => !ends.has(point.id))
-          .map((point) => (
-            <circle
-              key={point.id}
-              cx={point.x}
-              cy={point.y}
-              r={called.has(point.id) ? 3.5 : 2}
-              fill={called.has(point.id) ? NAVY : PAPER}
-              stroke={NAVY}
-              strokeWidth={called.has(point.id) ? 0 : 1.25}
+      <MapContainer center={cal[0]} zoom={11} scrollWheelZoom={false} attributionControl>
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <Fit positions={positions} />
+        <Polyline positions={cal} pathOptions={{ color: NAVY, weight: 4 }} />
+        {bart.length > 1 ? <Polyline positions={bart} pathOptions={{ color: RED, weight: 4 }} /> : null}
+        {(transfer ? BART_RED : [])
+          .filter((stop) => stop.id !== "MLBR" && stop.id !== "DBRK")
+          .map((stop) => (
+            <CircleMarker
+              key={stop.id}
+              center={[stop.lat, stop.lon]}
+              radius={3}
+              pathOptions={{ color: RED, fillColor: RED, fillOpacity: 1, weight: 0 }}
             />
           ))}
-        {cal
-          .filter((point) => point.id === from.id || point.id === calEnd.id)
-          .map((point) => (
-            <circle key={`end-${point.id}`} cx={point.x} cy={point.y} r="6" fill={PAPER} stroke={NAVY} strokeWidth="2.5" />
-          ))}
-        {transfer && bart[0] ? <circle cx={bart[0].x} cy={bart[0].y} r="4" fill={RED} /> : null}
-        {bart[1] ? <circle cx={bart[1].x} cy={bart[1].y} r="6" fill={PAPER} stroke={RED} strokeWidth="2.5" /> : null}
-        {(() => {
-          const origin = cal.find((point) => point.id === from.id);
-          const dest = cal.find((point) => point.id === to.id);
-          return (
-            <>
-              {origin ? labelFor(from.id, from.name, origin.x, origin.y) : null}
-              {transfer && bart[0]
-                ? labelFor("xfer", "Millbrae", bart[0].x, bart[0].y, "Transfer")
-                : dest
-                  ? labelFor(to.id, to.name, dest.x, dest.y)
-                  : null}
-            </>
-          );
-        })()}
-        {bart[1] ? labelFor(to.id, to.name, bart[1].x, bart[1].y) : null}
-      </svg>
+        <CircleMarker center={[from.lat, from.lon]} radius={8} pathOptions={{ color: NAVY, fillColor: PAPER, fillOpacity: 1, weight: 3 }}>
+          <Tooltip permanent direction="right">
+            {from.name}
+          </Tooltip>
+        </CircleMarker>
+        {transfer && millbrae ? (
+          <CircleMarker
+            center={[millbrae.lat, millbrae.lon]}
+            radius={8}
+            pathOptions={{ color: RED, fillColor: PAPER, fillOpacity: 1, weight: 3 }}
+          >
+            <Tooltip permanent direction="left">
+              Millbrae transfer
+            </Tooltip>
+          </CircleMarker>
+        ) : null}
+        <CircleMarker
+          center={[to.lat, to.lon]}
+          radius={8}
+          pathOptions={{ color: transfer ? RED : NAVY, fillColor: PAPER, fillOpacity: 1, weight: 3 }}
+        >
+          <Tooltip permanent direction="right">
+            {to.name}
+          </Tooltip>
+        </CircleMarker>
+      </MapContainer>
       <figcaption>
         <span>
           <i className="swatch cal" /> Caltrain
         </span>
         {transfer ? (
           <span>
-            <i className="swatch bart" /> BART Red
+            <i className="swatch bart" /> BART Red line
           </span>
         ) : null}
       </figcaption>
+      <p className="sr-only">{caption}</p>
     </figure>
   );
 }
