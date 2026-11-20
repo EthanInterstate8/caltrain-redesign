@@ -1,47 +1,44 @@
 # CALTRAIN ONE
 
-An unofficial redesign of the Caltrain homepage. The trip planner is the page: two stations, the next trains, the kind of train, and a live countdown. Not affiliated with Caltrain or the San Mateo County Transit District.
+An unofficial redesign concept of [caltrain.com](https://www.caltrain.com) for the Berkeley × Stanford Grok Bot Hackathon, Best Design track. Not affiliated with Caltrain.
+
+Live site: https://caltrain-redesign-ten.vercel.app
 
 ## Inspiration
 
-caltrain.com still opens on a wide timetable and a pile of notices. The journey is the thing a rider came to do, so this concept puts that search in the first screen and treats the peninsula line as wayfinding, not a spreadsheet. The visual language is Swiss editorial transit design: warm paper, navy, one red, oversized type, and a route you can read.
+caltrain.com opens on a wide timetable and a pile of notices. Riders come to answer a simpler question: where am I going, and what is the next train? CALTRAIN ONE keeps Caltrain’s own facts and puts that question first, in a Swiss editorial layout: warm paper (`#F7F5F0`), navy (`#172233`), and Caltrain red (`#D92632`).
 
 ## What it does
 
-- Asks where you are going, with a station picker ordered north to south and a leave-now, depart-at, or arrive-by choice.
-- Lists the next Caltrain trips between those stations from the real GTFS timetable: train number, Local / Limited / Express / South County, departure, arrival, duration, and stops.
-- Marks the fastest arrival and counts down to each departure in Pacific Time.
-- Draws the trip on the corridor. Express trains leave a hollow stop where they do not call.
-- Saves nothing and asks for no account. A link such as `/?from=palo_alto&to=san_francisco` is the whole query.
-- Leaves hooks on each train for ONE Agent: Protect this journey, Explain my transfer, and Check accessibility. They open a short panel on the row. Live alerts are not connected in this pass, and the panels say so instead of inventing a delay.
+- Plans trips from the real Caltrain GTFS timetable: train number, Local / Limited / Express, times, and a countdown.
+- Plans Palo Alto to Downtown Berkeley as Caltrain to Millbrae, then BART Red from the Millbrae transfer platform, with the timetable gap and a backup connection.
+- Shows numbered boarding steps taken only from GTFS stop names, direction, and platform codes. If a fact is not in the feed, it is left out.
+- Offers ONE Agent as Rescue, Confidence, and Access, including a homepage **Ask ONE** box. Without live keys it says live alerts are not connected.
+- A step-free toggle lengthens the Millbrae connection because BART’s GTFS file does not publish wheelchair boarding. It never invents a delay or an elevator status.
 
 ## How we built it
 
-Next.js (App Router), React, and TypeScript. The schedule is the Caltrain GTFS feed published by Trillium, bundled in `data/gtfs` and read on the server. Trip search, service calendars, and wheelchair-boarding flags all come from that feed. The interface is hand-set CSS with Geist.
+Next.js, React, and TypeScript. Caltrain static GTFS is bundled in `data/gtfs`. Direct Millbrae-to-Downtown Berkeley BART trips are bundled from BART’s public GTFS. `POST /api/agent` answers from that data. If `XAI_API_KEY` is set, Grok phrases the answer from those facts only. If `API_511_KEY` is set, 511 service alerts for Caltrain (CT) and BART (BA) are added. The team’s own photos are in `public/images`.
 
-## Challenges we ran into
+## Challenges
 
-GTFS times run past midnight and the calendar has holiday exceptions, so “leave now” has to be computed in America/Los_Angeles against the right service id. Express trains skip stations, which only shows up if the map is drawn from the trip’s actual calls. A class name reused from the skip link also yanked skipped stations out of the route and stacked them in a navy block.
+GTFS times, calendars, and platform names had to stay the source of truth, including the Millbrae transfer and BART’s missing wheelchair field. Live feeds are optional and rate-limited, so the site has to say when it cannot see delays or elevators. The homepage had to stay readable over a real photograph without turning into a generic dashboard.
 
 ## Accomplishments
 
-A homepage that leads with the journey, and a results view that is a timetable plus the line. Palo Alto to San Francisco returns real afternoon trains, including Express 515, with type, time, and a countdown. It holds together on a laptop and a phone.
+A public site that looks like a designed transit product, answers Palo Alto to Downtown Berkeley with a real connection, and keeps ONE Agent on the homepage instead of a side chat. Step-free routing changes the BART train. Nothing on the page fabricates a delay or an elevator outage.
 
 ## What we learned
 
-A transit page gets clearer when the times share a column and the map is the same object as the search, not a second product. Small type in the brand red fails contrast, so red is reserved for the headline, the search button, the express badge, and the route.
+The timetable is clearer when times share a column and the map is the same object as the search. Small red type fails contrast, so red stays on the headline, the button, and express trains. Saying “not connected” is more useful than a guessed “on time.”
 
 ## What's next
 
-- ONE Agent for real: Rescue against 511 service alerts, Confidence as step-by-step boarding, Access against elevator alerts. The buttons are already on the train.
-- BART, so Palo Alto to Downtown Berkeley is a timed Caltrain plus BART itinerary via Millbrae.
-- Road incidents near the origin station.
-- Station pages, a full timetable, and the visitor ticket guide.
-- A public deploy. This pass is the design increment.
+Elevator outages when a live feed is connected, more BART station pairs, and the two later photos (a two-train hero and an interior) by swapping paths in `lib/photos.ts`.
 
 ## How Grok Bot helped build it
 
-Draft for the team: Grok Bot scaffolded the Next.js app, wired the GTFS trip search, and iterated the layout from screenshots of the desktop and phone homepage.
+Grok Bot, a desktop assistant, brainstormed the idea from the hackathon tracks, read the team’s Google Doc brief, connected GitHub, and launched and steered this Cursor cloud agent in small increments. It kept the work to spec, cropped and supplied the team’s photos, and guided the Vercel deploy and environment variables.
 
 ## How to run it
 
@@ -50,15 +47,4 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. Try Palo Alto to San Francisco, or open `/?from=palo_alto&to=san_francisco`.
-
-```bash
-npm run build
-npm start
-```
-
-Palo Alto to Downtown Berkeley uses the bundled BART trips in `data/bart-mlbr-dbrk.json` (from BART's public GTFS). Other station pairs stay on Caltrain.
-
-ONE Agent is `POST /api/agent`. Copy `.env.example` to `.env` if you have keys. `XAI_API_KEY` calls Grok. `API_511_KEY` loads 511 service alerts for Caltrain (CT) and BART (BA), cached five minutes. With neither key, the panel uses the timetable and says live alerts are not connected.
-
-The bundled timetable covers 31 Jan 2026 through 31 Jan 2027 (`data/gtfs`, from https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip). Refresh those files when Caltrain publishes a new feed.
+Open http://localhost:3000. Optional keys go in `.env` (see `.env.example`): `XAI_API_KEY` for Grok and `API_511_KEY` for 511 alerts. Without them, schedules and Ask ONE still work and say live alerts are not connected.
