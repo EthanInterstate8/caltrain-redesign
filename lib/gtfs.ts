@@ -43,6 +43,7 @@ type Catalog = {
   timesByTrip: Map<string, StopTime[]>;
   timesByStop: Map<string, StopTime[]>;
   routeName: Map<string, string>;
+  stopMeta: Map<string, { name: string; platform: string; wheelchair: string }>;
   calendar: CalendarRow[];
   exceptions: { service_id: string; date: string; exception_type: string }[];
   range: string;
@@ -79,6 +80,12 @@ function load(): Catalog {
   const zones = new Map(read("farezone_attributes.txt").map((row) => [row.zone_id, zoneNumber(row.zone_name)]));
   const routes = read("routes.txt");
   const routeName = new Map(routes.map((row) => [row.route_id, row.route_short_name]));
+  const stopMeta = new Map(
+    stops.map((row) => [
+      row.stop_id,
+      { name: row.stop_name, platform: row.platform_code || "", wheelchair: row.wheelchair_boarding || "" },
+    ]),
+  );
 
   const parents = stops.filter((row) => row.location_type === "1");
   const platforms = stops.filter((row) => row.location_type === "0" && row.parent_station);
@@ -175,17 +182,18 @@ function load(): Catalog {
     timesByTrip,
     timesByStop,
     routeName,
+    stopMeta,
     calendar,
     exceptions,
     range: `${pretty(starts[0] || "")} – ${pretty(ends[ends.length - 1] || "")}`,
   };
 }
 
-const globalCatalog = globalThis as unknown as { __caltrainCatalog?: Catalog };
+const globalCatalog = globalThis as unknown as { __caltrainCatalogV2?: Catalog };
 
 export function getCatalog(): Catalog {
-  if (!globalCatalog.__caltrainCatalog) globalCatalog.__caltrainCatalog = load();
-  return globalCatalog.__caltrainCatalog;
+  if (!globalCatalog.__caltrainCatalogV2) globalCatalog.__caltrainCatalogV2 = load();
+  return globalCatalog.__caltrainCatalogV2;
 }
 
 export function activeServices(ymd: string): Set<string> {

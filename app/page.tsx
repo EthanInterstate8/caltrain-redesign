@@ -20,6 +20,7 @@ export default async function Page({
     when: read("when"),
     time: read("time"),
     date: read("date"),
+    stepfree: read("stepfree"),
   };
   const plan = planJourney({
     fromId: initial.from,
@@ -27,6 +28,7 @@ export default async function Page({
     when: initial.when,
     time: initial.time,
     date: initial.date,
+    stepFree: initial.stepfree === "1",
   });
   return <Experience stations={listStations()} service={describeService()} plan={plan} initial={initial} />;
 }

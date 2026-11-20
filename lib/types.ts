@@ -45,6 +45,10 @@ export type TripOption = {
   originAccess: Access;
   destAccess: Access;
   transfer?: Transfer;
+  boardStopName?: string;
+  alightStopName?: string;
+  steps?: string[];
+  accessNotes?: { station: string; detail: string; source: string }[];
 };
 
 export type Plan =

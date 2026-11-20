@@ -23,7 +23,7 @@ export function Experience({
   stations: Station[];
   service: ServiceInfo;
   plan: Plan | null;
-  initial: { from?: string; to?: string; when?: string; time?: string; date?: string };
+  initial: { from?: string; to?: string; when?: string; time?: string; date?: string; stepfree?: string };
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -34,6 +34,7 @@ export function Experience({
   );
   const [time, setTime] = useState(initial.time || "08:00");
   const [date, setDate] = useState(initial.date || "");
+  const [stepFree, setStepFree] = useState(initial.stepfree === "1");
   const [arm, setArm] = useState<Arm>("from");
   const [selected, setSelected] = useState(plan && plan.ok ? plan.trips[0]?.id ?? "" : "");
   const [hook, setHook] = useState<{
@@ -59,15 +60,17 @@ export function Experience({
   const to = stations.find((station) => station.id === toId);
   const selectedTrip = plan?.ok ? plan.trips.find((trip) => trip.id === selected) ?? plan.trips[0] : undefined;
 
-  function search(next?: { fromId?: string; toId?: string }) {
+  function search(next?: { fromId?: string; toId?: string; stepFree?: boolean }) {
     const origin = next?.fromId ?? fromId;
     const dest = next?.toId ?? toId;
+    const accessible = next?.stepFree ?? stepFree;
     if (!origin || !dest || origin === dest) return;
     const params = new URLSearchParams({ from: origin, to: dest, when });
     if (when !== "now") {
       params.set("time", time);
       if (date) params.set("date", date);
     }
+    if (accessible) params.set("stepfree", "1");
     startTransition(() => router.push(`/?${params.toString()}`, { scroll: false }));
   }
 
@@ -151,6 +154,11 @@ export function Experience({
               onTo={setToId}
               onWhen={setWhen}
               onTime={setTime}
+              stepFree={stepFree}
+              onStepFree={(value) => {
+                setStepFree(value);
+                search({ stepFree: value });
+              }}
               onDate={setDate}
               onSwap={() => {
                 setFromId(toId);
@@ -203,6 +211,11 @@ export function Experience({
               onTo={setToId}
               onWhen={setWhen}
               onTime={setTime}
+              stepFree={stepFree}
+              onStepFree={(value) => {
+                setStepFree(value);
+                search({ stepFree: value });
+              }}
               onDate={setDate}
               onSwap={() => {
                 setFromId(toId);
@@ -378,6 +391,8 @@ function SearchForm({
   onWhen,
   onTime,
   onDate,
+  stepFree,
+  onStepFree,
   onSwap,
   onTry,
   onBerkeley,
@@ -398,6 +413,8 @@ function SearchForm({
   onWhen: (when: WhenMode) => void;
   onTime: (time: string) => void;
   onDate: (date: string) => void;
+  stepFree: boolean;
+  onStepFree: (value: boolean) => void;
   onSwap: () => void;
   onTry: () => void;
   onBerkeley: () => void;
@@ -435,6 +452,14 @@ function SearchForm({
           Search
         </button>
       </div>
+      <label className="stepfree">
+        <input
+          type="checkbox"
+          checked={stepFree}
+          onChange={(event) => onStepFree(event.target.checked)}
+        />
+        Step-free / I use a wheelchair or need elevators
+      </label>
       {compact ? null : (
         <div className="under-search">
           <button className="textbtn" type="button" onClick={onSwap}>
@@ -670,6 +695,13 @@ function TripRow({
           Check accessibility
         </button>
       </div>
+      {trip.steps ? (
+        <ol className="steps">
+          {trip.steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      ) : null}
       {trip.transfer ? (
         <p className="xfer">
           Millbrae {trip.transfer.millbraeArrive}
@@ -682,7 +714,18 @@ function TripRow({
           {trip.transfer.boardStop}
         </p>
       ) : null}
-      {hook ? (
+      {hook?.kind === "access" && trip.accessNotes ? (
+        <div className="hook" data-agent="access">
+          <h3>Access</h3>
+          {trip.accessNotes.map((note) => (
+            <p key={note.station}>
+              <strong>{note.station}.</strong> {note.detail} Source:{" "}
+              {note.source.startsWith("http") ? <a href={note.source}>BART elevator status</a> : note.source}.
+            </p>
+          ))}
+          <p>Live elevator status not connected.</p>
+        </div>
+      ) : hook ? (
         <div className="hook" data-agent={hook.kind}>
           <h3>{hook.loading ? "ONE Agent" : hook.title}</h3>
           <p>{hook.loading ? "Checking the timetable…" : hook.text}</p>

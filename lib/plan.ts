@@ -13,6 +13,7 @@ const BERKELEY: Station = {
   access: "unlisted",
 };
 const MIN_TRANSFER_MS = 4 * 60 * 1000;
+const STEP_FREE_TRANSFER_MS = 20 * 60 * 1000;
 
 export type Query = {
   fromId?: string;
@@ -21,6 +22,7 @@ export type Query = {
   time?: string;
   date?: string;
   now?: number;
+  stepFree?: boolean;
 };
 
 function trainType(routeName: string): string {
@@ -95,9 +97,13 @@ function toOption(
     })
     .filter((call, index, list) => list.findIndex((item) => item.id === call.id) === index);
 
+  const board = catalog.stopMeta.get(origin.stopId);
+  const alight = catalog.stopMeta.get(dest.stopId);
   return {
     id: `${ymd}-${trip.id}`,
     tripId: trip.id,
+    boardStopName: board?.name,
+    alightStopName: alight?.name,
     number: trip.number,
     type: trainType(catalog.routeName.get(trip.routeId) || ""),
     headsign: trip.headsign,
@@ -219,12 +225,16 @@ function planBerkeley(query: Query): Plan {
   const date = query.date && /^\d{4}-\d{2}-\d{2}$/.test(query.date) ? query.date : todayYmd(now);
   const clock = parseClock(query.time);
 
+  const stepFree = query.stepFree === true;
+  const buffer = stepFree ? STEP_FREE_TRANSFER_MS : MIN_TRANSFER_MS;
+  const bufferMin = buffer / 60000;
+
   const build = (ymd: string) => {
     const trains = ridesOn(catalog, from, millbrae, ymd);
     const bart = bartRides(ymd);
     const joined: Omit<TripOption, "recommended">[] = [];
     for (const train of trains) {
-      const bartRide = bart.find((ride) => ride.departEpoch >= train.arriveEpoch + MIN_TRANSFER_MS);
+      const bartRide = bart.find((ride) => ride.departEpoch >= train.arriveEpoch + buffer);
       if (!bartRide) continue;
       const waitMin = Math.round((bartRide.departEpoch - train.arriveEpoch) / 60000);
       joined.push({
@@ -253,6 +263,8 @@ function planBerkeley(query: Query): Plan {
           bartTripId: bartRide.id,
           boardStop: bartRide.fromStop === "W40-3" ? "Millbrae (Caltrain Transfer Platform)" : "Millbrae",
         },
+        steps: berkeleySteps(train, waitMin, bartRide),
+        accessNotes: berkeleyAccess(from, millbrae, train),
       });
     }
     return joined.sort((a, b) => a.arriveEpoch - b.arriveEpoch || a.departEpoch - b.departEpoch);
@@ -286,7 +298,7 @@ function planBerkeley(query: Query): Plan {
       date: used,
       when,
       nextDay,
-      note: "Caltrain to Millbrae, then BART Red from the Millbrae transfer platform. The transfer minutes are the gap in the timetable. Connections shorter than 4 minutes are not offered. Live delays are not connected.",
+      note: berkeleyNote(stepFree, bufferMin),
       trips,
     };
   }
@@ -307,7 +319,77 @@ function planBerkeley(query: Query): Plan {
     date,
     when,
     nextDay: false,
-    note: "Caltrain to Millbrae, then BART Red from the Millbrae transfer platform. The transfer minutes are the gap in the timetable. Connections shorter than 4 minutes are not offered. Live delays are not connected.",
+    note: berkeleyNote(stepFree, bufferMin),
     trips,
   };
+}
+
+function berkeleyNote(stepFree: boolean, bufferMin: number): string {
+  const rule = stepFree
+    ? `Step-free is on, so the connection at Millbrae must be at least ${bufferMin} minutes. BART's GTFS file does not publish wheelchair boarding, so a shorter gap is not treated as step-free.`
+    : "Connections shorter than 4 minutes are not offered.";
+  return `Caltrain to Millbrae, then BART Red from the Millbrae transfer platform. The transfer minutes are the gap in the timetable. ${rule} Live delays are not connected.`;
+}
+
+function side(name: string | undefined): string | undefined {
+  if (!name) return undefined;
+  if (/northbound/i.test(name)) return "northbound";
+  if (/southbound/i.test(name)) return "southbound";
+  return undefined;
+}
+
+function berkeleySteps(
+  train: Omit<TripOption, "recommended">,
+  waitMin: number,
+  bartRide: { line: string; color: string; headsign: string; departEpoch: number; arriveEpoch: number; fromStop: string },
+): string[] {
+  const direction = side(train.boardStopName);
+  const alightSide = side(train.alightStopName);
+  const board = [
+    `Board Caltrain ${train.number} (${train.type}) at Palo Alto`,
+    direction ? `${direction}, stop "${train.boardStopName}"` : train.boardStopName ? `stop "${train.boardStopName}"` : "",
+    `at ${train.departLabel}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const ridden = Math.max(train.calls.length - 1, 1);
+  const off = [
+    `Ride ${ridden} stops and get off at Millbrae at ${train.arriveLabel}`,
+    alightSide ? `(${alightSide}, "${train.alightStopName}")` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const platform = bartRide.fromStop === "W40-3" ? "GTFS platform_code 3, Millbrae (Caltrain Transfer Platform)" : bartRide.fromStop;
+  return [
+    `${board}.`,
+    `${off}.`,
+    `Transfer. The timetable leaves ${waitMin} minutes. No walk time is published in these feeds. BART ${bartRide.line} (${bartRide.color}) toward ${bartRide.headsign} departs ${formatTime(bartRide.departEpoch)} from ${platform}.`,
+    `Arrive Downtown Berkeley at ${formatTime(bartRide.arriveEpoch)}. The arrival stop in the BART feed is platform_code 1.`,
+  ];
+}
+
+function berkeleyAccess(from: Station, millbrae: Station, train: Omit<TripOption, "recommended">) {
+  return [
+    {
+      station: "Palo Alto",
+      detail: `${train.boardStopName ?? "Palo Alto"}: ${accessFact(from.access)}.`,
+      source: "Caltrain GTFS stops.txt wheelchair_boarding",
+    },
+    {
+      station: "Millbrae",
+      detail: `${train.alightStopName ?? "Millbrae"}: ${accessFact(millbrae.access)}. The feed also names elevator stops at Millbrae. It does not say whether they are working.`,
+      source: "Caltrain GTFS stops.txt",
+    },
+    {
+      station: "Downtown Berkeley",
+      detail: "The bundled BART GTFS file has no wheelchair_boarding field for this station.",
+      source: "https://www.bart.gov/schedules/elevators",
+    },
+  ];
+}
+
+function accessFact(access: Station["access"]): string {
+  if (access === "step-free") return "wheelchair_boarding 1 (step-free)";
+  if (access === "not-step-free") return "wheelchair_boarding 2 (not step-free)";
+  return "no wheelchair_boarding value";
 }
