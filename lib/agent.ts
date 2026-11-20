@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { parseCsv } from "./csv";
 import { getCatalog } from "./gtfs";
-import { planJourney, type Query } from "./plan";
+import { listStations, planJourney, type Query } from "./plan";
 import type { TripOption } from "./types";
 
 export type AgentAction = "protect" | "explain" | "access";
@@ -185,4 +185,134 @@ export async function runAgent(query: Query & { action?: string; tripId?: string
     text = `Live alerts not connected. ${text}`;
   }
   return { title: titles[action], text, live: Boolean(alerts) };
+}
+
+export type AskPlan = { label: string; fromId: string; toId: string };
+
+function clockFromQuestion(question: string): string | undefined {
+  const match = question.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  if (!match) return undefined;
+  let hour = Number(match[1]);
+  const minute = match[2] ?? "00";
+  const ap = match[3].toLowerCase();
+  if (ap === "pm" && hour < 12) hour += 12;
+  if (ap === "am" && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, "0")}:${minute}`;
+}
+
+function stationsIn(question: string): { id: string; name: string }[] {
+  const q = ` ${question.toLowerCase()} `;
+  const hits: { id: string; name: string; at: number }[] = [];
+  const add = (id: string, name: string, key: string) => {
+    const at = q.indexOf(key);
+    if (at >= 0 && !hits.some((hit) => hit.id === id)) hits.push({ id, name, at });
+  };
+  add("DBRK", "Downtown Berkeley", "berkeley");
+  add("san_francisco", "San Francisco", "san francisco");
+  if (/\bsf\b/.test(q)) add("san_francisco", "San Francisco", " sf ");
+  for (const station of listStations()) {
+    if (station.name.length < 4) continue;
+    add(station.id, station.name, station.name.toLowerCase());
+  }
+  return hits.sort((a, b) => a.at - b.at).map(({ id, name }) => ({ id, name }));
+}
+
+function elevatorStations(): { station: string; names: string[] }[] {
+  const file = path.join(process.cwd(), "data", "gtfs", "stops.txt");
+  const rows = parseCsv(fs.readFileSync(file, "utf8")).filter((row) => /elevator/i.test(row.stop_name));
+  const catalog = getCatalog();
+  const grouped = new Map<string, string[]>();
+  for (const row of rows) {
+    const parent = catalog.byId.get(row.parent_station);
+    const key = parent?.name || row.parent_station || row.stop_name;
+    const list = grouped.get(key) ?? [];
+    list.push(row.stop_name);
+    grouped.set(key, list);
+  }
+  return [...grouped.entries()].map(([station, names]) => ({ station, names }));
+}
+
+export async function askQuestion(question: string, context?: Query) {
+  const found = stationsIn(question);
+  const wantsAccess = /elevator|wheelchair|step-free|accessible/i.test(question);
+  const wantsOnTime = /on time|delay|delayed|running late/i.test(question);
+  const time = clockFromQuestion(question);
+  let fromId = context?.fromId;
+  let toId = context?.toId;
+  if (found.length >= 2) {
+    fromId = found[0].id;
+    toId = found[1].id;
+  } else if (/berkeley/i.test(question)) {
+    fromId = found.find((station) => station.id !== "DBRK")?.id || "palo_alto";
+    toId = "DBRK";
+  } else if (found.length === 1 && /\bto\b/i.test(question)) {
+    toId = found[0].id;
+  }
+  const plans: AskPlan[] = [];
+  if (fromId && toId && fromId !== toId) {
+    const nameOf = (id: string) => listStations().find((station) => station.id === id)?.name || id;
+    plans.push({ label: `Plan ${nameOf(fromId)} to ${nameOf(toId)}`, fromId, toId });
+  }
+  const plan = fromId && toId ? planJourney({ fromId, toId, when: time ? "depart" : "now", time, stepFree: wantsAccess }) : null;
+  const trip = plan && plan.ok ? plan.trips[0] : undefined;
+  const sources = [
+    "Caltrain GTFS stops.txt and stop_times.txt",
+    toId === "DBRK" ? "BART GTFS, Millbrae transfer platform to Downtown Berkeley" : "",
+  ].filter(Boolean);
+  let alerts: Alert[] | null = null;
+  try {
+    alerts = await liveAlerts();
+  } catch {
+    alerts = null;
+  }
+  const elevators = wantsAccess ? elevatorStations() : [];
+  const facts = {
+    question,
+    liveAlerts: alerts ?? "not_connected",
+    itinerary: trip
+      ? {
+          train: trip.number,
+          type: trip.type,
+          depart: trip.departLabel,
+          arrive: trip.arriveLabel,
+          minutes: trip.durationMin,
+          transfer: trip.transfer ?? null,
+          steps: trip.steps ?? [],
+        }
+      : null,
+    access: trip?.accessNotes ?? null,
+    elevatorStops: elevators,
+  };
+  let text: string | null = null;
+  if (process.env.XAI_API_KEY) {
+    try {
+      text = await grok("explain", { ...facts, instruction: "Answer the question using only these facts. Never invent delays or elevator status." });
+    } catch {
+      text = null;
+    }
+  }
+  if (!text) {
+    const live = "Live alerts not connected.";
+    if (wantsOnTime && !trip) {
+      text = `${live} I can't say if that train is on time. Name the station you are leaving from and I can show the scheduled trains.`;
+    } else if (wantsAccess && elevators.length && found.length === 0) {
+      text = `${live} These Caltrain stations have elevator stops named in GTFS: ${elevators.map((item) => item.station).join(", ")}. The feed does not say if they are working. Live elevator status not connected.`;
+      sources.push("https://www.bart.gov/schedules/elevators");
+    } else if (trip?.transfer) {
+      text = `${live} ${trip.steps?.join(" ") ?? ""} Scheduled only. This is not a live delay.`;
+    } else if (trip) {
+      text = `${live} Next scheduled train is ${trip.number} ${trip.type}, ${trip.departLabel} to ${trip.arriveLabel} (${trip.durationMin} min). That is the timetable, not a live status.`;
+    } else if (wantsAccess && found[0]) {
+      const station = getCatalog().byId.get(found[0].id);
+      text = station
+        ? `${live} ${station.name}: ${accessFact(station.access)}. Live elevator status not connected.`
+        : `${live} I can only check stations in the Caltrain GTFS feed.`;
+      sources.push("https://www.bart.gov/schedules/elevators");
+    } else {
+      text = `${live} I can look up a Caltrain trip, a station's wheelchair boarding flag, or the Palo Alto to Downtown Berkeley transfer. I won't guess a delay.`;
+    }
+  } else if (!process.env.API_511_KEY && !/live alerts not connected/i.test(text)) {
+    text = `Live alerts not connected. ${text}`;
+  }
+  return { title: "ONE Agent", text, live: Boolean(alerts), sources, plans };
 }
