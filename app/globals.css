@@ -295,6 +295,33 @@ h1 .worry { display: block; color: var(--red); }
 }
 .textbtn:hover { text-decoration-color: var(--red); color: var(--red-text); }
 
+.trip-map {
+  margin: 0 0 22px;
+  background: #F7F5F0;
+  border: 1px solid var(--line);
+}
+.trip-map svg { display: block; width: 100%; height: auto; }
+.trip-map figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 0 14px 14px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.swatch {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.swatch.cal { background: #172233; }
+.swatch.bart { background: #D92632; }
+
 .line-wrap {
   border-left: 1px solid var(--line);
   padding: 4px 0 4px 28px;
@@ -580,6 +607,12 @@ h1 .worry { display: block; color: var(--red); }
   padding: 16px 18px;
   font-size: 16px;
   min-width: 0;
+}
+.ask-row .ask-go {
+  min-width: 148px;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0.14em;
 }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .chip, .agent-btn {

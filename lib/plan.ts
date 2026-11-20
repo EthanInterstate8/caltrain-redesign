@@ -245,8 +245,7 @@ function planBerkeley(query: Query): Plan {
         arriveLabel: formatTime(bartRide.arriveEpoch),
         durationMin: Math.max(1, Math.round((bartRide.arriveEpoch - train.departEpoch) / 60000)),
         calls: [
-          train.calls[0],
-          { id: "place_MLBR", name: "Millbrae", time: train.arriveLabel },
+          ...train.calls,
           { id: "DBRK", name: "Downtown Berkeley", time: formatTime(bartRide.arriveEpoch) },
         ],
         destAccess: "unlisted",
