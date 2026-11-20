@@ -190,17 +190,17 @@ export function Experience({
               <article>
                 <div className="idx">01</div>
                 <h2>Rescue</h2>
-                <p>Miss this train? We’ll show the next real one, and how much later you arrive.</p>
+                <p>Shows the next scheduled train if you miss this one, and how much later you arrive.</p>
               </article>
               <article>
                 <div className="idx">02</div>
                 <h2>Confidence</h2>
-                <p>Boarding steps in order: which train, where you get off, and the transfer.</p>
+                <p>Numbered steps: which train to board, where to get off, and the Millbrae transfer.</p>
               </article>
               <article>
                 <div className="idx">03</div>
                 <h2>Access</h2>
-                <p>Turn on step-free when you need a longer, safer connection. We only mark what the data says.</p>
+                <p>Step-free routes add elevator time at Millbrae. Access flags come from the timetable.</p>
               </article>
             </div>
         </div>
@@ -326,22 +326,22 @@ export function Experience({
           <section className="band agent-below" id="agent">
             <hr className="rule" />
             <h2 className="section-title">ONE Agent</h2>
-            <p className="section-dek">It sits on the journey, not in a side chat. Open it from a train.</p>
+            <p className="section-dek">Ask about a trip, a transfer, or how to pay. Live alerts from 511.</p>
             <div className="agent">
               <article>
                 <div className="idx">01</div>
                 <h2>Rescue</h2>
-                <p>If this departure fails, the backup is the next real train, with the minutes you gain or lose.</p>
+                <p>Shows the next scheduled train if you miss this one, and how much later you arrive.</p>
               </article>
               <article>
                 <div className="idx">02</div>
                 <h2>Confidence</h2>
-                <p>Which train, which stations it actually calls at, and where you stay on board.</p>
+                <p>Numbered steps: which train to board, where to get off, and the Millbrae transfer.</p>
               </article>
               <article>
                 <div className="idx">03</div>
                 <h2>Access</h2>
-                <p>Step-free only when the station data says so. Elevator alerts come with the live feed.</p>
+                <p>Step-free routes add elevator time at Millbrae. Access flags come from the timetable.</p>
               </article>
             </div>
           </section>
@@ -378,7 +378,7 @@ export function Experience({
               </div>
               <div>
                 <span>Live</span>
-                <strong>Not connected</strong>
+                <strong>Live alerts from 511</strong>
               </div>
             </div>
           </section>
@@ -395,7 +395,7 @@ export function Experience({
           <h2 className="section-title" id="stations-title">
               Stations
             </h2>
-            <p className="section-dek">North to south. Access is the GTFS wheelchair boarding flag, not a guess.</p>
+            <p className="section-dek">North to south. Wheelchair access is the timetable flag, not a live elevator check.</p>
             <div className="stations">
               {stations.map((station) => (
                 <button key={station.id} type="button" onClick={() => pickStation(station.id)}>
@@ -502,7 +502,7 @@ function SearchForm({
           checked={stepFree}
           onChange={(event) => onStepFree(event.target.checked)}
         />
-        Step-free / I use a wheelchair or need elevators
+        Step-free routes add elevator time at Millbrae
       </label>
       {compact ? null : (
         <div className="under-search">
