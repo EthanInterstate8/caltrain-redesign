@@ -193,6 +193,7 @@ export function Experience({
               onSubmit={() => search()}
               pending={pending}
             />
+            <AskOne onPlan={fill} />
             {plan && !plan.ok ? <p className="empty">{plan.error}</p> : null}
             <h2 className="section-title">How CALTRAIN ONE helps</h2>
             <div className="agent">
@@ -738,13 +739,13 @@ function TripRow({
         {accessRisk ? <div className="risk">{accessRisk}</div> : null}
       </div>
       <div className="actions">
-        <button className="textbtn" type="button" onClick={(event) => { event.stopPropagation(); onHook("protect"); }}>
+        <button className="agent-btn" type="button" onClick={(event) => { event.stopPropagation(); onHook("protect"); }}>
           Protect this journey
         </button>
-        <button className="textbtn" type="button" onClick={(event) => { event.stopPropagation(); onHook("explain"); }}>
+        <button className="agent-btn" type="button" onClick={(event) => { event.stopPropagation(); onHook("explain"); }}>
           Explain my transfer
         </button>
-        <button className="textbtn" type="button" onClick={(event) => { event.stopPropagation(); onHook("access"); }}>
+        <button className="agent-btn" type="button" onClick={(event) => { event.stopPropagation(); onHook("access"); }}>
           Check accessibility
         </button>
       </div>
@@ -785,6 +786,90 @@ function TripRow({
         </div>
       ) : null}
     </article>
+  );
+}
+
+function AskOne({ onPlan }: { onPlan: (fromId: string, toId: string) => void }) {
+  const [value, setValue] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [answer, setAnswer] = useState<{
+    title: string;
+    text: string;
+    sources?: string[];
+    plans?: { label: string; fromId: string; toId: string }[];
+  } | null>(null);
+  const chips = [
+    "Is my 5pm train to SF on time?",
+    "Which stations have elevators?",
+    "How do I get to Berkeley?",
+  ];
+
+  async function ask(question: string) {
+    const text = question.trim();
+    if (!text) return;
+    setValue(text);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text }),
+      });
+      setAnswer(await res.json());
+    } catch {
+      setAnswer({
+        title: "ONE Agent",
+        text: "Live alerts not connected. I couldn't read the timetable just now, so I won't guess a delay.",
+        sources: [],
+        plans: [],
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form
+      className="ask"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void ask(value);
+      }}
+    >
+      <label htmlFor="ask-one">Ask ONE</label>
+      <div className="ask-row">
+        <input
+          id="ask-one"
+          value={value}
+          placeholder="Ask anything: Is my 5pm train to SF on time? Which stations have elevators? How do I get to Berkeley?"
+          onChange={(event) => setValue(event.target.value)}
+        />
+        <button className="go" type="submit">
+          {loading ? "…" : "Ask"}
+        </button>
+      </div>
+      <div className="chips">
+        {chips.map((chip) => (
+          <button key={chip} type="button" className="chip" onClick={() => void ask(chip)}>
+            {chip}
+          </button>
+        ))}
+      </div>
+      {answer ? (
+        <div className="ask-panel" data-ask="one">
+          <h3>{answer.title}</h3>
+          <p>{answer.text}</p>
+          {answer.plans?.map((item) => (
+            <button key={item.label} type="button" className="agent-btn" onClick={() => onPlan(item.fromId, item.toId)}>
+              {item.label}
+            </button>
+          ))}
+          {answer.sources && answer.sources.length > 0 ? (
+            <p className="sources">Sources: {answer.sources.join(" · ")}</p>
+          ) : null}
+        </div>
+      ) : null}
+    </form>
   );
 }
 
